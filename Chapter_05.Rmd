@@ -1,0 +1,448 @@
+---
+title: "Chapter 5"
+output: html_document
+date: '2023-06-03'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+#install.packages("Lahman")
+library(dplyr)
+library(nycflights13)
+library(ggplot2)
+```
+
+### 5.5.2 Exercises
+> 1. Currently dep_time and sched_dep_time are convenient to look at, but hard to compute with because they’re not really continuous numbers. Convert them to a more convenient representation of number of minutes since midnight.
+
+[Using 'flights' dataset, select only dep_time and create one column 'dep_time_minutes' which has the number of minutes since midnight. Also note that the original dataset has midnight stored as 1440 which needs to be changed to 0.]
+
+```{r}
+flights %>% 
+select(dep_time) %>% 
+mutate(
+  dep_time_minutes = (dep_time %/% 100 * 60 + dep_time %% 100) %% 1440
+)
+```
+
+
+
+> 2. Compare air_time with arr_time - dep_time. What do you expect to see? What do you see? What do you need to do to fix it?
+
+[Using 'flights' dataset, create new columns to convert arr_time and dep_time to minutes after midnight as arr_time_minutes and dep_time_minutes and calc_air_time as the difference. select only the new columns and air_time to compare]
+
+```{r}
+flights %>%
+  mutate(
+    arr_time_minutes = (arr_time %/% 100 * 60 + arr_time %% 100) %% 1440,
+    dep_time_minutes = (dep_time %/% 100 * 60 + dep_time %% 100) %% 1440,
+    calc_air_time = arr_time_minutes - dep_time_minutes
+  ) %>%
+select(arr_time_minutes, dep_time_minutes, calc_air_time, air_time)
+```
+
+
+> 3. Compare dep_time, sched_dep_time, and dep_delay. How would you expect those three numbers to be related?
+
+[Use 'flights' dataset. Create new variables 'dep_time_minutes' and 'sched_dep_time_minutes' which represent minutes since midnight, 'calc_dep_delay' and a 'diff' showing difference of 'calc_dep_delay' and 'dep_delay'. Select only the pertinent columns, then sort with largest differences at the top.]
+```{r}
+flights %>%
+  mutate(
+    dep_time_minutes = (dep_time %/% 100 * 60 + dep_time %% 100) %% 1440,
+    sched_dep_time_minutes = (sched_dep_time %/% 100 * 60 + sched_dep_time %% 100) %% 1440,
+    calc_dep_delay = dep_time_minutes - sched_dep_time_minutes,
+    diff = calc_dep_delay - dep_delay
+  ) %>% select(dep_time_minutes, sched_dep_time_minutes, calc_dep_delay, diff) %>% arrange(desc(diff))
+```
+
+
+> 4. Find the 10 most delayed flights using 3 ranking functions [min_rank, row_number, dense_rank].
+
+[Use 'flights' dataset; select the year, month, day, flight, tailnum, origin, dest, and dep_delay create 3 'dep_delay' rank columns, show only those less than 10, sorted by min_rank]
+```{r}
+flights %>%
+  select(year, month, day, flight, tailnum, origin, dest, dep_delay) %>%
+  mutate(dep_delay_min_rank = min_rank(desc(dep_delay)),
+         dep_delay_row_number = row_number(desc(dep_delay)),
+         dep_delay_dense_rank = dense_rank(desc(dep_delay))) %>%
+  filter(!(dep_delay_min_rank > 10 | dep_delay_row_number > 10 | dep_delay_dense_rank > 10)) %>%
+  arrange(dep_delay_min_rank)
+```
+
+>4. How are the functions min_rank() and dense_rank() different?
+
+They both assigned the same value to "ties"; however they differ in how they handle the subsequent row.
+min_rank() will have gaps as it assigns the next (non-tied) row the minimum integer value place greater than the number of values less that it (ex. 1, 2, 2, 2, 5)
+dense_rank() will not have gaps as it assigns the next (non-tied) row the subsequent integer after the the tied ranking (ex. 1, 2, 2, 2, 3)
+
+> 5. What does 1:3 + 1:10 return? Why?
+
+It returns a warning "...longer object length is not a multiple of shorter object length". When vectors are combined in R if they are different length r "recycles" the smaller to match the length of the longer. However, if the multiple of the smaller does not match that of the longer a warning message is displayed.
+
+> 6. What are the base trigonometric functions that R provide? 
+
+* cos(x) or cospi(x)
+* sin(x) or sinpi(x)
+* tan(x) or tanpi(x)
+
+> 6b. Using cosine of \(\frac{\pi}{6}\) show the two types are the same.
+
+```{r}
+identical(cos(pi/6), cospi(1/6))
+```
+
+
+
+
+
+## 5.6 Grouped Summaries with summarise()
+
+
+What is the mean departure delay? 
+
+[Use 'flights' dataset; use the summarise function and remove NAs]
+```{r}
+summarise(flights, delay = mean(dep_delay, na.rm = TRUE))
+```
+
+What is the mean departure delay by day? 
+
+[Use 'flights' dataset; Use summarise function, remove NAs]
+```{r}
+group_by(flights, year, month, day) %>%
+  summarise(delay = mean(dep_delay, na.rm = TRUE))
+```
+
+Create a new data frame called 'delay_v1' with the following analysis:
+
+1. Group flights by destination
+2. Summarise to compute average distance, average delay, and number of flights.
+3. Filter to remove noise (include only the destinations with more than 20 flights) and remove Honolulu airport, which is almost twice as far away as the next closest airport.
+
+Use 'flights' dataset:
+
+```{r}
+delay_v1 <- flights %>%
+  group_by(dest) %>%
+  summarise(dist = mean(distance, na.rm = TRUE),
+            delay = mean(arr_delay, na.rm = TRUE),
+            count = n(),) %>%
+  filter(count > 20, dest != "HNL")
+```
+
+
+Plot delay vs. dist as a scatter with the size of the point based on count. Make it transparent (alpha = 1/3). Add a smoothed curve without the standard error.
+
+Use the 'delay' dataset (previously created with the 'flights' dataset):
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data = delay, mapping = aes(x = dist, y = delay)) +
+  geom_point(aes(size = count), alpha = 1/3) +
+  geom_smooth(se = FALSE)
+```
+
+```{r}
+not_cancelled <- flights %>%
+  filter(!is.na(dep_delay), !is.na(arr_delay))
+
+not_cancelled %>%
+  group_by(year, month, day) %>%
+  summarise(mean = mean(dep_delay), .groups = "drop_last")
+```
+
+There is a subset of the 'flights' data set called 'not_cancelled'. 
+
+[For context, it has filtered out any cancelled flights by using null values in 'dep_delay' and 'arr_delay' as proxies for cancelled flight]
+
+Find out information about delays by tailnum by summarizing by tailnum and taking the mean of the arrival delay.
+
+[This will produce the "1st" version of the "delays" dataset. Tailnum and average delay]
+
+```{r}
+delays_v1 <- not_cancelled %>%
+  group_by(tailnum) %>%
+  summarise(
+    delay = mean(arr_delay)
+  )
+
+delays_v1
+```
+
+The 'delays_version1' dataset has a the average arrival delay by tailnum. Use the dataset to create a frequency polygon for the average delay with a binwidth of 10.
+```{r}
+ggplot(data = delays, mapping = aes(x = delay)) +
+  geom_freqpoly(binwidth = 10)
+```
+
+The 'delay_version1' dataset shows us that some planes have an average delay of 300 minutes! Let's recreate the delays dataset [as 'delays_v2' from the 'not_cancelled' dataset, which has the same structure as the original 'flights' dataset. This time remove the nulls from 'arr_delay' and also create the count of flights.
+
+
+
+```{r}
+delays <- not_cancelled %>%
+  group_by(tailnum) %>%
+  summarise(
+    delay = mean(arr_delay, na.rm = TRUE),
+    n = n()
+  )
+```
+
+Now create a scatter plot of the average delay and flight count:  Delay vs. Count (n). [Use 'delays' dataset which is at the grain of tailnum in the 'delays' dataset. Given the number of points let's set alpha to 1/10]
+
+```{r}
+ggplot(data = delays, mapping = aes(x = n, y = delay)) +
+  geom_point(alpha = 1/10)
+```
+
+Let's plot the information again, but let's only look at airplanes that had more than 25 flights. [Essentially removing the planes with few flights]
+```{r}
+delays %>%
+  filter(n > 25) %>%
+  ggplot(mapping = aes(x = n, y = delay)) +
+  geom_point(alpha = 1/10)
+```
+
+```{r}
+library(Lahman)
+batting <- as_tibble(Lahman::Batting)
+```
+
+With the 'batting' dataset create a batting average column 'ba' (Hits 'H' / At Bats 'AB') and the At Bats 'ab' column removing "na"s all by PlayerID 
+```{r}
+batters <- batting %>%
+  group_by(playerID) %>% 
+  summarise(
+    ba = sum(H, na.rm = TRUE) / sum(AB, na.rm = TRUE),
+    ab = sum(AB, na.rm = TRUE)
+    )
+```
+
+
+Using the 'batters' dataset plot a scatter plot of batting average 'ba' vs. at bats 'ab' for players with more than 100 at bats. Also, add a smoothed line showing the relationship (no need to add standard error)
+```{r}
+batters %>% 
+  filter(ab > 100) %>% 
+  ggplot(mapping = aes(x = ab, y = ba)) +
+    geom_point() + 
+    geom_smooth(se = FALSE)
+```
+GAM = Generalized Additive Model
+
+
+
+
+Using the non_cancelled flights (just the subset of flights that hasn't been cancelled) get the average arrival delay by day as well as the average positive delay
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    avg_delay1 = mean(arr_delay),
+    avg_delay2 = mean(arr_delay[arr_delay > 0]),
+    .groups = "drop_last"
+  )
+```
+
+Using the 'not_cancelled' dataset find the standard deviation of distance by destination and sort from largest standard deviation to smallest.
+```{r}
+not_cancelled %>% 
+  group_by(dest) %>% 
+  summarise(distance_sd = sd(distance)) %>% 
+  arrange(desc(distance_sd))
+```
+
+Using 'not_cancelled' dataset find the first and last departure time of each day. (using min and max functions in a group/summarise)
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    first = min(dep_time),
+    last = max(dep_time),
+    .groups = "drop_last"
+  )
+```
+
+Using 'not_cancelled' dataset find the first and last departure time of each day (using first and last functions in a group/summarise)
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    first_dep = first(dep_time), 
+    last_dep = last(dep_time),
+    .groups = "drop_last"
+  )
+```
+
+Using 'not_cancelled' dataset find the first and last departure time of each day. (using group_by, mutate, filter)
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  mutate(r = min_rank(desc(dep_time))) %>% 
+  filter(r %in% range(r))
+```
+Which destinations have the most carriers?
+```{r}
+not_cancelled %>% 
+  group_by(dest) %>% 
+  summarise(carriers = n_distinct(carrier)) %>% 
+  arrange(desc(carriers))
+```
+Which destinations have the most flights? (filter and sort; use the n() function)
+```{r}
+not_cancelled %>% 
+  group_by(dest) %>% 
+  summarise(n = n()) %>%
+  arrange(desc(n))
+```
+
+Which destinations have the most flights? (filter and sort; use the count() function)
+```{r}
+not_cancelled %>%
+  count(dest) %>%
+  arrange(desc(n))
+```
+
+Find the planes that flew the most miles. (Use count() and the wt option):
+```{r}
+not_cancelled %>% 
+  count(tailnum, wt = distance) %>%
+  arrange(desc(n))
+```
+
+How many flights left before 5am? (Using 'not_cancelled' flights subset group by day and summarise)
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(n_early = sum(dep_time < 500),
+            .groups = "drop_last")
+```
+
+What proportion of flights are delayed by more than an hour? 
+
+[Using 'not_cancelled' dataset, a 'flights' subset group by day and summarise]
+```{r}
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(hour_prop = mean(arr_delay > 60),
+            .groups = "drop_last")
+```
+
+```{r}
+(daily <- group_by(flights, year, month, day))
+```
+
+Create and show a new dataset called 'per_day' that is the count of flights per day using the 'summarise' function on the 'daily' dataset.
+
+[The 'daily' dataset is the 'flights' dataset grouped by year, month, day]
+```{r}
+(per_day   <- summarise(daily, flights = n()))
+```
+Create and show a new dataset called 'per_month' that is the count of flights per month using the 'summarise' function on the 'per_day' dataset. (Note that a group is "peeled" off after doing the summarise)
+
+[The 'per_day' dataset is summarized from the 'flights' dataset having the count of flights grouped by year, month, day]
+```{r}
+(per_month <- summarise(per_day, flights = sum(flights)))
+```
+Create and show a new dataset called 'per_year' that is the count of flights per year using the 'summarise' function on the 'per_month' dataset. (Note that a group is "peeled" off after doing the summarise)
+
+[The 'per_month' dataset is summarized from the 'flights' dataset having the count of flights grouped by year, month]
+
+```{r}
+(per_year  <- summarise(per_month, flights = sum(flights)))
+```
+Show the count of all flights by changing the 'daily' dataset with an 'ungroup' function.
+
+[Using the 'daily' dataset which is created from the flights dataset with grouping by year, month, day.]
+```{r}
+daily %>% 
+  ungroup() %>%             # no longer grouped by date
+  summarise(flights = n())  # all flights
+```
+Come up with another approach that will give you the number of flights by destination, i.e. not_cancelled %>% count(dest), but without using count()
+
+[Using 'not_cancelled' dataset, a 'flights' subset]
+```{r}
+not_cancelled %>% 
+  group_by(dest) %>%
+  summarise(n = n())
+```
+Come up with another approach that will give you the number of flights by destination, i.e. not_cancelled %>% count(dest), and use the tally() function
+
+[Using 'not_cancelled' dataset, a 'flights' subset]
+
+```{r}
+not_cancelled %>%
+  group_by(dest) %>%
+  tally()
+```
+
+
+Come up with another approach that will give you the miles traveled by tailnum, i.e. not_cancelled %>% count(tailnum, wt = distance), but without using count() 
+ 
+[Using 'not_cancelled' dataset, a 'flights' subset]
+```{r}
+not_cancelled %>% 
+  group_by(tailnum) %>%
+  summarise(dist = sum(distance)) 
+```
+
+Come up with another approach that will give you the miles traveled by tailnum, i.e. not_cancelled %>% count(tailnum, wt = distance), and use the tally function
+ 
+[Using 'not_cancelled' dataset, a 'flights' subset]
+```{r}
+not_cancelled %>%
+  group_by(tailnum) %>%
+  tally(distance)
+```
+Look at the number of cancelled flights per day. Is there a pattern? Is the proportion of cancelled flights related to the average delay?
+```{r}
+cancel_per_day <- flights %>%
+  mutate(cancelled = (is.na(arr_delay) | is.na(dep_delay))) %>%
+  group_by(month, day) %>%
+  summarise(
+    NumCancelled = sum(cancelled),
+    NumFlights = n(),
+    AveDelay = mean(arr_delay, na.rm = TRUE),
+    CancelProp = mean(cancelled)
+  )
+```
+
+```{r}
+ggplot(data = cancel_per_day) +
+  geom_point(mapping = aes(x = NumFlights, y = NumCancelled))
+```
+
+
+```{r}
+ggplot(data = cancel_per_day) +
+  geom_point(mapping = aes(x = AveDelay, y = CancelProp))
+```
+
+> 5A. Which carrier has the worst delays? [Use 'not_cancelled' dataset (a 'flights' subset). ]
+
+```{r}
+not_cancelled %>%
+  mutate(Delay = (arr_delay >= 0 | dep_delay >= 0)) %>%
+  group_by(carrier) %>%
+  summarise(
+    DelayProportion = mean(Delay),
+    n = n()
+  ) %>%
+  arrange(desc(DelayProportion))
+```
+
+> 5B. Can you disentangle the effects of bad airports vs. bad carriers? [Use 'flights' dataset. Create a Delay column based on both 'arr_delay' and 'dep_delay'. Sort destinations based on delay proportion.]
+
+```{r}
+not_cancelled %>%
+  mutate(Delay = (arr_delay >= 0 | dep_delay >= 0)) %>%
+  group_by(dest) %>%
+  summarise(
+    DelayProportion = mean(Delay),
+    n = n()) %>%
+  arrange(desc(DelayProportion))
+```
+
+
